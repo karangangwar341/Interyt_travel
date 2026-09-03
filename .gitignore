@@ -1,0 +1,25 @@
+node_modules/
+.next/
+out/
+build/
+.env
+.env.local
+.env*.local
+*.log
+.DS_Store
+Thumbs.db
+prisma/dev.db
+prisma/dev.db-journal
+
+# Locally-uploaded media (Phase 3). Swap lib/storage.ts for a real object
+# store (S3/R2/Vercel Blob) before deploying — local disk isn't persistent
+# on most serverless hosts.
+public/uploads/*
+!public/uploads/.gitkeep
+
+# TypeScript build info
+*.tsbuildinfo
+next-env.d.ts
+
+# IDE / Tooling local settings
+.claude/

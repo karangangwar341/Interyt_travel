@@ -1,0 +1,471 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// NOTE: SQLite for local development (zero external setup — file-based).
+// For production, switch provider to "postgresql" and set DATABASE_URL to a
+// real Postgres connection string. Enum-like fields and list fields below use
+// plain String (validated by Zod / TS unions at the app layer, see
+// lib/data/types.ts and lib/validations/*) so this schema is portable across
+// SQLite and Postgres without changes beyond the datasource block.
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Region: NORTH | WEST | SOUTH | EAST | NORTHEAST
+// TripType: ADVENTURE | LEISURE | CULTURAL | ROAD_TRIP | WEEKEND
+// Difficulty: EASY | MODERATE | CHALLENGING
+// DepartureStatus: SEATS_AVAILABLE | ALMOST_FULL | SOLD_OUT | COMPLETED | CANCELLED
+// EnquiryStatus: NEW | CONTACTED | FOLLOW_UP | QUOTED | CONFIRMED | CLOSED
+// BookingStatus: PENDING | CONFIRMED | CANCELLED | COMPLETED
+// EnquirySource: BOOKING_FORM | CUSTOM_TRIP | CONTACT_FORM | WHATSAPP | PHONE
+// DeviceCategory: MOBILE | TABLET | DESKTOP
+// TripStatus: DRAFT | PUBLISHED | ARCHIVED
+// FaqOwnerType: TRIP | DESTINATION | BLOG | GLOBAL
+// MediaOwnerType: TRIP | DESTINATION | BLOG | ITINERARY_DAY | HOMEPAGE | REVIEW
+// MediaRole: HERO | THUMBNAIL | GALLERY | FEATURED | OG | CONTENT
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  activity AdminActivity[]
+}
+
+// ---------------------------------------------------------------------------
+// Media Library
+// ---------------------------------------------------------------------------
+
+model Media {
+  id           String  @id @default(cuid())
+  url          String
+  thumbnailUrl String?
+  fileName     String
+  mimeType     String
+  fileSize     Int
+  width        Int?
+  height       Int?
+
+  altText     String?
+  title       String?
+  caption     String?
+  description String?
+
+  uploadedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  usages MediaUsage[]
+
+  @@index([createdAt])
+}
+
+// Polymorphic join: attaches one Media item to one owner (Trip, Destination,
+// Blog, ItineraryDay, Homepage section, Review) in a given role, with an
+// order for galleries. This is the single mechanism behind every image slot
+// in the app instead of a separate join table per content type.
+model MediaUsage {
+  id      String @id @default(cuid())
+  mediaId String
+  media   Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  ownerType String // MediaOwnerType
+  ownerId   String
+  role      String // MediaRole
+  order     Int    @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([mediaId])
+  @@index([ownerType, ownerId])
+}
+
+// ---------------------------------------------------------------------------
+// FAQs (polymorphic — Trip / Destination / Blog / Global)
+// ---------------------------------------------------------------------------
+
+model Faq {
+  id       String  @id @default(cuid())
+  question String
+  answer   String
+  order    Int     @default(0)
+
+  ownerType String // FaqOwnerType
+  ownerId   String? // null when ownerType = GLOBAL
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerType, ownerId])
+}
+
+// ---------------------------------------------------------------------------
+// Reviews
+// ---------------------------------------------------------------------------
+
+model Review {
+  id           String  @id @default(cuid())
+  customerName String
+  location     String?
+  rating       Int
+  reviewText   String
+  travelMonth  String?
+
+  tripId String?
+  trip   Trip?   @relation(fields: [tripId], references: [id])
+
+  featured  Boolean @default(false)
+  published Boolean @default(true)
+  // Seeded placeholder content, not a real verified customer review — see
+  // Testimonials.tsx, which keeps a small "preview" caption while any
+  // isSample rows exist.
+  isSample  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId])
+  @@index([featured])
+}
+
+// ---------------------------------------------------------------------------
+// Site Settings (singleton row)
+// ---------------------------------------------------------------------------
+
+model SiteSettings {
+  id String @id @default("singleton")
+
+  businessName String @default("Bharat Trails")
+  phone        String @default("+911234567890")
+  whatsapp     String @default("911234567890")
+  email        String @default("hello@example.com")
+  address      String?
+
+  instagramUrl String?
+  facebookUrl  String?
+  youtubeUrl   String?
+
+  defaultSeoTitle       String  @default("Bharat Trails — Discover India, Your Way")
+  defaultSeoDescription String  @default("Curated journeys across India's mountains, beaches, deserts, heritage cities and hidden gems.")
+
+  businessHours   String?
+  supportMessage  String?
+
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Admin Activity Log
+// ---------------------------------------------------------------------------
+
+model AdminActivity {
+  id String @id @default(cuid())
+
+  adminId String?
+  admin   AdminUser? @relation(fields: [adminId], references: [id])
+
+  action      String // e.g. "trip.published", "media.uploaded", "login"
+  entityType  String? // "Trip" | "Destination" | "Blog" | "Media" | ...
+  entityId    String?
+  description String
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Destinations
+// ---------------------------------------------------------------------------
+
+model Destination {
+  id          String @id @default(cuid())
+  name        String
+  slug        String @unique
+  state       String
+  region      String
+  summary     String
+  description String
+  bestSeason  String
+  thingsToDo  String @default("[]") // JSON-encoded string[]
+  experiences String @default("[]") // JSON-encoded string[]
+
+  seoTitle       String?
+  seoDescription String?
+
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  trips   Trip[]
+  guides  TravelGuideArticle[]
+
+  @@index([region])
+  @@index([published])
+}
+
+// ---------------------------------------------------------------------------
+// Trips
+// ---------------------------------------------------------------------------
+
+model Trip {
+  id    String @id @default(cuid())
+  title String
+  slug  String @unique
+
+  destinationId String
+  destination   Destination @relation(fields: [destinationId], references: [id])
+  states        String      @default("[]") // JSON-encoded string[]
+
+  durationDays   Int
+  durationNights Int
+  price          Int
+  currency       String @default("INR")
+
+  overview   String
+  highlights String @default("[]") // JSON-encoded string[]
+
+  itinerary  TripItineraryDay[]
+  inclusions String @default("[]") // JSON-encoded string[]
+  exclusions String @default("[]") // JSON-encoded string[]
+  hotels     String @default("[]") // JSON-encoded string[]
+  transport  String?
+  meals      String?
+
+  bestSeason String?
+  difficulty String @default("EASY")
+  tripType   String
+  tags       String @default("[]") // JSON-encoded string[]
+
+  rating         Float?
+  seoTitle       String?
+  seoDescription String?
+  status         String  @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  upcomingTrips      UpcomingTrip[]
+  enquiries          Enquiry[]
+  analyticsEvents    AnalyticsEvent[]
+  reviews            Review[]
+  relatedBlogs       BlogRelatedTrip[]
+
+  @@index([destinationId])
+  @@index([tripType])
+  @@index([status])
+}
+
+model TripItineraryDay {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  dayNumber      Int
+  title          String
+  location       String
+  travelDistance String?
+  travelTime     String?
+  hotel          String?
+  meals          String?
+  notes          String?
+
+  activities ItineraryActivity[]
+
+  @@unique([tripId, dayNumber])
+  @@index([tripId])
+}
+
+model ItineraryActivity {
+  id    String            @id @default(cuid())
+  dayId String
+  day   TripItineraryDay  @relation(fields: [dayId], references: [id], onDelete: Cascade)
+
+  text  String
+  order Int    @default(0)
+
+  @@index([dayId])
+}
+
+// ---------------------------------------------------------------------------
+// Upcoming Departures
+// ---------------------------------------------------------------------------
+
+model UpcomingTrip {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id])
+
+  departureDate     DateTime
+  returnDate        DateTime
+  departureLocation String
+
+  totalSeats     Int
+  availableSeats Int
+  price          Int
+
+  bookingDeadline DateTime
+  status          String  @default("SEATS_AVAILABLE")
+  featured        Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  enquiries Enquiry[]
+  bookings  Booking[]
+
+  @@index([tripId])
+  @@index([departureDate])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Enquiries & Bookings
+// ---------------------------------------------------------------------------
+
+model Enquiry {
+  id String @id @default(cuid())
+
+  customerName String
+  phone        String
+  email        String?
+
+  tripId         String?
+  trip           Trip?         @relation(fields: [tripId], references: [id])
+  upcomingTripId String?
+  upcomingTrip   UpcomingTrip? @relation(fields: [upcomingTripId], references: [id])
+
+  travelDate DateTime?
+  adults     Int       @default(1)
+  children   Int       @default(0)
+  rooms      Int?
+  budget     String?
+  message    String?
+
+  // Custom trip planner fields (null for booking/contact enquiries)
+  destinationInterest String?
+  durationInterest    String?
+  travelStyle         String?
+  interests           String? // JSON-encoded string[]
+
+  source String @default("BOOKING_FORM")
+  status String @default("NEW")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+
+  @@index([tripId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Booking {
+  id String @id @default(cuid())
+
+  enquiryId String
+  enquiry   Enquiry @relation(fields: [enquiryId], references: [id])
+
+  upcomingTripId String
+  upcomingTrip   UpcomingTrip @relation(fields: [upcomingTripId], references: [id])
+
+  travelers Int
+  amount    Int
+  status    String @default("PENDING")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([upcomingTripId])
+}
+
+// ---------------------------------------------------------------------------
+// Travel Guide (Blog)
+// ---------------------------------------------------------------------------
+
+model BlogCategory {
+  id   String @id @default(cuid())
+  name String @unique
+  slug String @unique
+
+  articles TravelGuideArticle[]
+}
+
+model TravelGuideArticle {
+  id    String @id @default(cuid())
+  title String
+  slug  String @unique
+
+  categoryId String
+  category   BlogCategory @relation(fields: [categoryId], references: [id])
+
+  destinationId String?
+  destination   Destination? @relation(fields: [destinationId], references: [id])
+
+  excerpt String
+  content String // structured JSON-encoded GuideSection[] (Phase 7 upgrades this to rich HTML)
+
+  author          String  @default("Bharat Trails Editorial")
+  readTimeMinutes Int     @default(5)
+
+  seoTitle       String?
+  seoDescription String?
+  canonical      String?
+
+  published   Boolean   @default(false)
+  publishedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  relatedTrips BlogRelatedTrip[]
+
+  @@index([categoryId])
+  @@index([destinationId])
+  @@index([published])
+}
+
+model BlogRelatedTrip {
+  id      String             @id @default(cuid())
+  blogId  String
+  blog    TravelGuideArticle @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  tripId  String
+  trip    Trip               @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([blogId, tripId])
+  @@index([tripId])
+}
+
+// ---------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------
+
+model AnalyticsEvent {
+  id String @id @default(cuid())
+
+  eventType String
+  page      String
+
+  tripId        String?
+  trip          Trip?   @relation(fields: [tripId], references: [id])
+  destinationId String?
+
+  sessionId String
+  source    String?
+  device    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([eventType])
+  @@index([sessionId])
+  @@index([createdAt])
+}
