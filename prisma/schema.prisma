@@ -9,7 +9,7 @@ generator client {
 // lib/data/types.ts and lib/validations/*) so this schema is portable across
 // SQLite and Postgres without changes beyond the datasource block.
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 import { destinations } from "../lib/data/destinations";
 import { trips } from "../lib/data/trips";
 import { upcomingTrips } from "../lib/data/upcoming-trips";
@@ -8,16 +9,51 @@ import { testimonials } from "../lib/data/testimonials";
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("Seeding database from existing static content...");
+  console.log("Starting database seed with CMS data and Admin user...");
 
-  // ---- Site settings (singleton) ----
+  // 1. Ensure all CRM and Analytics tables are kept completely empty
+  console.log("Clearing CRM and Analytics data...");
+  await prisma.booking.deleteMany();
+  await prisma.enquiry.deleteMany();
+  await prisma.analyticsEvent.deleteMany();
+  await prisma.adminActivity.deleteMany();
+  console.log("- CRM (Enquiries, Bookings) & Analytics (AnalyticsEvent) are empty.");
+
+  // 2. Clean existing CMS tables for an idempotent seed
+  await prisma.mediaUsage.deleteMany();
+  await prisma.faq.deleteMany();
+  await prisma.itineraryActivity.deleteMany();
+  await prisma.tripItineraryDay.deleteMany();
+  await prisma.upcomingTrip.deleteMany();
+  await prisma.blogRelatedTrip.deleteMany();
+  await prisma.review.deleteMany();
+  await prisma.travelGuideArticle.deleteMany();
+  await prisma.blogCategory.deleteMany();
+  await prisma.trip.deleteMany();
+  await prisma.destination.deleteMany();
+
+  // 3. Create the single Admin User
+  const adminName = process.env.ADMIN_NAME ?? "Admin";
+  const adminEmail = process.env.ADMIN_EMAIL ?? "admin@bharattrails.com";
+  const adminPassword = process.env.ADMIN_PASSWORD ?? "vgOsjyYCsldzlAcl";
+
+  const passwordHash = await bcrypt.hash(adminPassword, 12);
+  const adminUser = await prisma.adminUser.upsert({
+    where: { email: adminEmail },
+    update: { name: adminName, passwordHash },
+    create: { name: adminName, email: adminEmail, passwordHash },
+  });
+  console.log(`- Created Admin user: ${adminUser.email}`);
+
+  // 4. Seed CMS: Site settings (singleton)
   await prisma.siteSettings.upsert({
     where: { id: "singleton" },
     update: {},
     create: { id: "singleton" },
   });
+  console.log("- Site settings initialized");
 
-  // ---- Blog categories ----
+  // 5. Seed CMS: Blog categories
   const categoryIdByName = new Map<string, string>();
   for (const name of guideCategories) {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -30,7 +66,7 @@ async function main() {
   }
   console.log(`- ${categoryIdByName.size} blog categories`);
 
-  // ---- Destinations (+ FAQs) ----
+  // 6. Seed CMS: Destinations (+ FAQs)
   const destinationIdBySlug = new Map<string, string>();
   for (const d of destinations) {
     const row = await prisma.destination.create({
@@ -66,7 +102,7 @@ async function main() {
   }
   console.log(`- ${destinationIdBySlug.size} destinations`);
 
-  // ---- Trips (+ itinerary, activities, FAQs) ----
+  // 7. Seed CMS: Trips (+ itinerary, activities, FAQs)
   const tripIdBySlug = new Map<string, string>();
   let itineraryDayCount = 0;
   let activityCount = 0;
@@ -147,7 +183,7 @@ async function main() {
   }
   console.log(`- ${tripIdBySlug.size} trips, ${itineraryDayCount} itinerary days, ${activityCount} activities, ${tripFaqCount} trip FAQs`);
 
-  // ---- Upcoming departures ----
+  // 8. Seed CMS: Upcoming departures
   let upcomingCount = 0;
   for (const u of upcomingTrips) {
     const tripId = tripIdBySlug.get(u.tripSlug);
@@ -172,7 +208,7 @@ async function main() {
   }
   console.log(`- ${upcomingCount} upcoming departures`);
 
-  // ---- Blog articles ----
+  // 9. Seed CMS: Blog articles
   let articleCount = 0;
   let relatedTripLinkCount = 0;
   for (const a of articles) {
@@ -197,8 +233,6 @@ async function main() {
     });
     articleCount++;
 
-    // Derive related trips from the article's destination — a real
-    // relationship, not fabricated content.
     if (a.destinationSlug) {
       const relatedTrips = trips.filter((t) => t.destinationSlug === a.destinationSlug);
       for (const t of relatedTrips) {
@@ -213,7 +247,7 @@ async function main() {
   }
   console.log(`- ${articleCount} blog articles, ${relatedTripLinkCount} related-trip links`);
 
-  // ---- Reviews (sample/placeholder, clearly flagged) ----
+  // 10. Seed CMS: Reviews (placeholder testimonials)
   let reviewCount = 0;
   for (const t of testimonials) {
     const tripId = tripIdBySlug.get(t.tripSlug);
@@ -234,7 +268,7 @@ async function main() {
   }
   console.log(`- ${reviewCount} sample reviews`);
 
-  console.log("Seed complete.");
+  console.log("Database seeded successfully with CMS content and 1 admin user. CRM & Analytics are clean and empty.");
 }
 
 main()

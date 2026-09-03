@@ -10,6 +10,14 @@ const nextConfig = {
         protocol: "https",
         hostname: "upload.wikimedia.org",
       },
+      {
+        protocol: "https",
+        hostname: "**.neon.tech",
+      },
+      {
+        protocol: "https",
+        hostname: "**.aws.neon.tech",
+      },
     ],
   },
 };
