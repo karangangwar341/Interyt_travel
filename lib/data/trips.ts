@@ -144,13 +144,60 @@ async function hydrate(row: TripRow): Promise<Trip> {
   return mapTrip(row, faqs, images);
 }
 
+async function hydrateMany(rows: TripRow[]): Promise<Trip[]> {
+  if (rows.length === 0) return [];
+  const ids = rows.map((r) => r.id);
+
+  const [faqs, usages] = await Promise.all([
+    prisma.faq.findMany({
+      where: { ownerType: "TRIP", ownerId: { in: ids } },
+      orderBy: { order: "asc" },
+    }),
+    prisma.mediaUsage.findMany({
+      where: { ownerType: "TRIP", ownerId: { in: ids }, role: { in: ["HERO", "GALLERY"] } },
+      include: { media: true },
+      orderBy: { order: "asc" },
+    }),
+  ]);
+
+  const faqsByOwner = new Map<string, { question: string; answer: string }[]>();
+  for (const f of faqs) {
+    if (!f.ownerId) continue;
+    const list = faqsByOwner.get(f.ownerId) ?? [];
+    list.push({ question: f.question, answer: f.answer });
+    faqsByOwner.set(f.ownerId, list);
+  }
+
+  const imagesByOwner = new Map<string, { heroImage?: GalleryImage; gallery?: GalleryImage[] }>();
+  for (const u of usages) {
+    const entry = imagesByOwner.get(u.ownerId) ?? {};
+    const img: GalleryImage = {
+      url: u.media.url,
+      alt: u.media.altText ?? u.media.title ?? u.media.fileName,
+      width: u.media.width ?? undefined,
+      height: u.media.height ?? undefined,
+    };
+    if (u.role === "HERO" && !entry.heroImage) {
+      entry.heroImage = img;
+    } else if (u.role === "GALLERY") {
+      entry.gallery = entry.gallery ?? [];
+      entry.gallery.push(img);
+    }
+    imagesByOwner.set(u.ownerId, entry);
+  }
+
+  return rows.map((row) =>
+    mapTrip(row, faqsByOwner.get(row.id) ?? [], imagesByOwner.get(row.id) ?? {}),
+  );
+}
+
 export async function getPublishedTrips(): Promise<Trip[]> {
   const rows = await prisma.trip.findMany({
     where: { status: "PUBLISHED" },
     orderBy: { createdAt: "asc" },
     include,
   });
-  return Promise.all(rows.map(hydrate));
+  return hydrateMany(rows);
 }
 
 export async function getTripBySlug(slug: string): Promise<Trip | undefined> {
@@ -171,7 +218,7 @@ export async function getTripsByDestination(destinationSlug: string): Promise<Tr
     orderBy: { createdAt: "asc" },
     include,
   });
-  return Promise.all(rows.map(hydrate));
+  return hydrateMany(rows);
 }
 
 export async function getSimilarTrips(trip: Trip, limit = 3): Promise<Trip[]> {
@@ -185,7 +232,7 @@ export async function getSimilarTrips(trip: Trip, limit = 3): Promise<Trip[]> {
     take: limit,
     include,
   });
-  return Promise.all(rows.map(hydrate));
+  return hydrateMany(rows);
 }
 
 export const tripTypeLabels: Record<Trip["tripType"], string> = {

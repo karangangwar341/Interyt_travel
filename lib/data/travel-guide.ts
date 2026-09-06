@@ -68,6 +68,30 @@ async function hydrate(row: ArticleRow): Promise<TravelGuideArticle> {
   return mapArticle(row, heroImage);
 }
 
+async function hydrateMany(rows: ArticleRow[]): Promise<TravelGuideArticle[]> {
+  if (rows.length === 0) return [];
+  const ids = rows.map((r) => r.id);
+
+  const heroUsages = await prisma.mediaUsage.findMany({
+    where: { ownerType: "BLOG", ownerId: { in: ids }, role: "HERO" },
+    include: { media: true },
+  });
+
+  const heroByOwner = new Map<string, GalleryImage>();
+  for (const u of heroUsages) {
+    if (!heroByOwner.has(u.ownerId)) {
+      heroByOwner.set(u.ownerId, {
+        url: u.media.url,
+        alt: u.media.altText ?? u.media.title ?? u.media.fileName,
+        width: u.media.width ?? undefined,
+        height: u.media.height ?? undefined,
+      });
+    }
+  }
+
+  return rows.map((row) => mapArticle(row, heroByOwner.get(row.id)));
+}
+
 const include = {
   category: { select: { name: true } },
   destination: { select: { slug: true } },
@@ -79,7 +103,7 @@ export async function getPublishedArticles(): Promise<TravelGuideArticle[]> {
     orderBy: { createdAt: "asc" },
     include,
   });
-  return Promise.all(rows.map(hydrate));
+  return hydrateMany(rows);
 }
 
 export async function getArticleBySlug(slug: string): Promise<TravelGuideArticle | undefined> {
@@ -96,7 +120,7 @@ export async function getArticlesByCategory(category: string): Promise<TravelGui
     orderBy: { createdAt: "asc" },
     include,
   });
-  return Promise.all(rows.map(hydrate));
+  return hydrateMany(rows);
 }
 
 export async function getRelatedArticles(
@@ -116,7 +140,7 @@ export async function getRelatedArticles(
     take: limit,
     include,
   });
-  return Promise.all(rows.map(hydrate));
+  return hydrateMany(rows);
 }
 
 export async function getArticleByIdAny(id: string): Promise<TravelGuideArticle | undefined> {

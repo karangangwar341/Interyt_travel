@@ -53,6 +53,7 @@ export async function TripDetailView({
           priority
           className="absolute inset-0"
         />
+        <div className="absolute inset-0 bg-gradient-to-t from-charcoal/70 via-charcoal/10 to-transparent" aria-hidden />
         <Container className="relative z-10 pb-12 text-ivory">
           <nav aria-label="Breadcrumb" className="mb-4 flex flex-wrap items-center gap-1.5 text-xs text-ivory/70">
             <Link href="/" className="hover:text-ivory">Home</Link>

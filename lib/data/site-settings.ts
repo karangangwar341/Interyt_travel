@@ -22,12 +22,28 @@ export interface SiteSettingsData {
  * call this directly without prop-drilling — Next.js dedupes the underlying
  * query within a single render pass.
  */
+const defaultSettings: SiteSettingsData = {
+  businessName: "Bharat Trails",
+  phone: "+911234567890",
+  whatsapp: "911234567890",
+  email: "hello@example.com",
+  address: null,
+  instagramUrl: null,
+  facebookUrl: null,
+  youtubeUrl: null,
+  defaultSeoTitle: "Bharat Trails — Discover India, Your Way",
+  defaultSeoDescription:
+    "Curated journeys across India's mountains, beaches, deserts, heritage cities and hidden gems.",
+  businessHours: null,
+  supportMessage: null,
+};
+
 export const getSiteSettings = cache(async (): Promise<SiteSettingsData> => {
-  const row = await prisma.siteSettings.upsert({
+  const row = await prisma.siteSettings.findUnique({
     where: { id: "singleton" },
-    update: {},
-    create: { id: "singleton" },
   });
+
+  if (!row) return defaultSettings;
 
   return {
     businessName: row.businessName,

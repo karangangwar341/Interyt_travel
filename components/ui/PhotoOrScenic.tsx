@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { ScenicBlock } from "./ScenicBlock";
+import { cn } from "@/lib/utils";
 import type { GalleryImage, ScenicPattern, ScenicTone } from "@/lib/data/types";
 
 export function PhotoOrScenic({
@@ -26,7 +27,7 @@ export function PhotoOrScenic({
   }
 
   return (
-    <div className={`relative ${className ?? ""}`}>
+    <div className={cn("relative overflow-hidden", className)}>
       <Image
         src={image.url}
         alt={image.alt || alt}

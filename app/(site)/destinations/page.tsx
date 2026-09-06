@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Container } from "@/components/ui/Container";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { DestinationCard } from "@/components/marketing/DestinationCard";
-import { getDestinationsByRegion, regionLabels } from "@/lib/data/destinations";
+import { getAllDestinations, regionLabels } from "@/lib/data/destinations";
 import type { Region } from "@/lib/data/types";
 
 export const metadata: Metadata = {
@@ -14,9 +14,11 @@ export const metadata: Metadata = {
 const regions: Region[] = ["NORTH", "WEST", "SOUTH", "EAST", "NORTHEAST"];
 
 export default async function DestinationsPage() {
-  const regionItems = await Promise.all(
-    regions.map(async (region) => ({ region, items: await getDestinationsByRegion(region) })),
-  );
+  const allDestinations = await getAllDestinations();
+  const regionItems = regions.map((region) => ({
+    region,
+    items: allDestinations.filter((d) => d.region === region),
+  }));
 
   return (
     <main className="py-16 md:py-24">

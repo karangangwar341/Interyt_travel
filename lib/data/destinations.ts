@@ -82,12 +82,52 @@ async function hydrate(row: DestinationRow): Promise<Destination> {
   return mapDestination(row, faqs, heroImage);
 }
 
+async function hydrateMany(rows: DestinationRow[]): Promise<Destination[]> {
+  if (rows.length === 0) return [];
+  const ids = rows.map((r) => r.id);
+
+  const [faqs, heroUsages] = await Promise.all([
+    prisma.faq.findMany({
+      where: { ownerType: "DESTINATION", ownerId: { in: ids } },
+      orderBy: { order: "asc" },
+    }),
+    prisma.mediaUsage.findMany({
+      where: { ownerType: "DESTINATION", ownerId: { in: ids }, role: "HERO" },
+      include: { media: true },
+    }),
+  ]);
+
+  const faqsByOwner = new Map<string, { question: string; answer: string }[]>();
+  for (const f of faqs) {
+    if (!f.ownerId) continue;
+    const list = faqsByOwner.get(f.ownerId) ?? [];
+    list.push({ question: f.question, answer: f.answer });
+    faqsByOwner.set(f.ownerId, list);
+  }
+
+  const heroByOwner = new Map<string, GalleryImage>();
+  for (const u of heroUsages) {
+    if (!heroByOwner.has(u.ownerId)) {
+      heroByOwner.set(u.ownerId, {
+        url: u.media.url,
+        alt: u.media.altText ?? u.media.title ?? u.media.fileName,
+        width: u.media.width ?? undefined,
+        height: u.media.height ?? undefined,
+      });
+    }
+  }
+
+  return rows.map((row) =>
+    mapDestination(row, faqsByOwner.get(row.id) ?? [], heroByOwner.get(row.id)),
+  );
+}
+
 export async function getAllDestinations(): Promise<Destination[]> {
   const rows = await prisma.destination.findMany({
     where: { published: true },
     orderBy: { createdAt: "asc" },
   });
-  return Promise.all(rows.map(hydrate));
+  return hydrateMany(rows);
 }
 
 export async function getDestinationBySlug(slug: string): Promise<Destination | undefined> {
@@ -101,7 +141,7 @@ export async function getDestinationsByRegion(region: Destination["region"]): Pr
     where: { region, published: true },
     orderBy: { createdAt: "asc" },
   });
-  return Promise.all(rows.map(hydrate));
+  return hydrateMany(rows);
 }
 
 export async function getDestinationByIdAny(id: string): Promise<Destination | undefined> {
